@@ -1,0 +1,123 @@
+name: Compiler et envoyer sur TestFlight
+
+on:
+  workflow_dispatch:
+
+jobs:
+  testflight:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    env:
+      BUNDLE_ID: ${{ vars.BUNDLE_ID || 'com.vdanneville.visio' }}
+      TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      BUILD_NUMBER: ${{ github.run_number }}
+
+    steps:
+      - name: Récupérer le code
+        uses: actions/checkout@v5
+
+      - name: Vérifier les secrets
+        run: |
+          missing=0
+          for name in TEAM_ID ASC_KEY_ID ASC_ISSUER_ID; do
+            if [ -z "${!name}" ]; then echo "::error::Secret manquant : $name"; missing=1; fi
+          done
+          if [ -z "${{ secrets.ASC_KEY_P8 }}" ]; then echo "::error::Secret manquant : ASC_KEY_P8"; missing=1; fi
+          exit $missing
+
+      - name: Choisir la dernière version stable de Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Générer le projet Xcode
+        run: |
+          brew install xcodegen
+          xcodegen generate
+
+      - name: Installer la clé App Store Connect
+        env:
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/keys"
+          # Nettoie la clé : garde uniquement le contenu base64 entre les balises
+          # (élimine retours chariot, espaces, caractères invisibles ajoutés au copier-coller).
+          python3 - "$RUNNER_TEMP/keys/AuthKey.p8" <<'PY'
+          import os, re, sys
+          raw = os.environ["ASC_KEY_P8"]
+          m = re.search(r"BEGIN PRIVATE KEY-+(.*?)-+END PRIVATE KEY", raw, re.S)
+          if not m:
+              print("::error::ASC_KEY_P8 : balises BEGIN/END PRIVATE KEY introuvables")
+              sys.exit(1)
+          body = m.group(1)
+          clean = re.sub(r"[^A-Za-z0-9+/=]", "", body)
+          removed = len(body) - len(clean)
+          print(f"::notice::Clé .p8 – {len(clean)} caractères base64 (200 attendus), {removed} caractères parasites retirés")
+          lines = [clean[i:i+64] for i in range(0, len(clean), 64)]
+          with open(sys.argv[1], "w") as f:
+              f.write("-----BEGIN PRIVATE KEY-----\n" + "\n".join(lines) + "\n-----END PRIVATE KEY-----\n")
+          PY
+          echo "::notice::Longueurs – TEAM_ID: ${#TEAM_ID}, ASC_KEY_ID: ${#ASC_KEY_ID}, ASC_ISSUER_ID: ${#ASC_ISSUER_ID}"
+          echo "::notice::Xcode : $(xcodebuild -version | tr '\n' ' ')"
+          echo "ASC_KEY_PATH=$RUNNER_TEMP/keys/AuthKey.p8" >> "$GITHUB_ENV"
+
+      - name: Compiler (archive)
+        run: |
+          # Signature ad hoc : n'exige aucun profil. La vraie signature se fait à l'export.
+          .github/scripts/xcb.sh archive \
+            -project Visio.xcodeproj \
+            -scheme Visio \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/Visio.xcarchive" \
+            DEVELOPMENT_TEAM="$TEAM_ID" \
+            CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="-" \
+            AD_HOC_CODE_SIGNING_ALLOWED=YES \
+            PROVISIONING_PROFILE_SPECIFIER="" \
+            PROVISIONING_PROFILE_REQUIRED=NO
+
+      - name: Signer et envoyer sur TestFlight
+        run: |
+          write_options() {
+            cat > "$RUNNER_TEMP/ExportOptions-$1.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key>
+            <string>app-store-connect</string>
+            <key>destination</key>
+            <string>$1</string>
+            <key>signingStyle</key>
+            <string>automatic</string>
+            <key>teamID</key>
+            <string>${TEAM_ID}</string>
+            <key>uploadSymbols</key>
+            <true/>
+            <key>manageAppVersionAndBuildNumber</key>
+            <false/>
+          </dict>
+          </plist>
+          EOF
+          }
+          auth=(-allowProvisioningUpdates
+                -authenticationKeyPath "$ASC_KEY_PATH"
+                -authenticationKeyID "$ASC_KEY_ID"
+                -authenticationKeyIssuerID "$ASC_ISSUER_ID")
+
+          # Envoi sur TestFlight
+          write_options upload
+          .github/scripts/xcb.sh -exportArchive \
+            -archivePath "$RUNNER_TEMP/Visio.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions-upload.plist" \
+            -exportPath "$RUNNER_TEMP/upload" \
+            "${auth[@]}"
+
+      - name: Résumé
+        run: |
+          echo "### ✅ Version $BUILD_NUMBER envoyée sur TestFlight" >> "$GITHUB_STEP_SUMMARY"
+          echo "Elle apparaîtra dans l'app TestFlight après le traitement par Apple (5 à 30 min)." >> "$GITHUB_STEP_SUMMARY"
