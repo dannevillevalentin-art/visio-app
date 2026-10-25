@@ -11,6 +11,9 @@ import UIKit
 struct CallView: View {
     let slot: CallSlot
     let settings: AppSettings
+    /// Appel entrant décroché depuis l'écran d'appel d'iOS : pas de sonnerie,
+    /// la vidéo démarre dès que l'app est à l'écran.
+    var viaCallKit = false
     /// animated = false : fermeture instantanée (après un retour à l'accueil).
     let onFinish: (_ animated: Bool) -> Void
 
@@ -22,10 +25,12 @@ struct CallView: View {
     @State private var dragOffset: CGSize = .zero
     @State private var showFakeHome = false
     @State private var ended = false
+    @Environment(\.scenePhase) private var scenePhase
 
-    init(slot: CallSlot, settings: AppSettings, onFinish: @escaping (_ animated: Bool) -> Void) {
+    init(slot: CallSlot, settings: AppSettings, viaCallKit: Bool = false, onFinish: @escaping (_ animated: Bool) -> Void) {
         self.slot = slot
         self.settings = settings
+        self.viaCallKit = viaCallKit
         self.onFinish = onFinish
         _session = StateObject(wrappedValue: CallSession(videoURL: slot.videoFile.map(Media.url)))
         _pipCorner = State(initialValue: (slot.style ?? settings.defaultStyle).defaultPipCorner)
@@ -36,7 +41,7 @@ struct CallView: View {
         let name = slot.contactName.trimmingCharacters(in: .whitespaces)
         return name.isEmpty ? settings.defaultContactName : name
     }
-    private var connected: Bool { session.phase == .connected }
+    private var connected: Bool { viaCallKit || session.phase == .connected }
 
     var body: some View {
         ZStack {
@@ -79,6 +84,9 @@ struct CallView: View {
         .onDisappear(perform: cleanUp)
         .onChange(of: session.phase) { _, phase in
             if phase == .connected { scheduleHide() }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if viaCallKit && phase == .active && !ended { session.connect() }
         }
     }
 
@@ -139,7 +147,13 @@ struct CallView: View {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { endCall() }
             }
         }
-        session.start(ringSeconds: settings.ringSeconds, ringbackSound: settings.ringbackSound)
+        if viaCallKit {
+            // L'audio est géré par l'appel iOS. La vidéo attend que l'app soit visible
+            // (après déverrouillage si le téléphone était verrouillé).
+            if UIApplication.shared.applicationState == .active { session.connect() }
+        } else {
+            session.start(ringSeconds: settings.ringSeconds, ringbackSound: settings.ringbackSound)
+        }
     }
 
     private func cleanUp() {
@@ -151,7 +165,7 @@ struct CallView: View {
 
     private func handleTap() {
         guard !ended else { return }
-        if !connected {
+        if session.phase != .connected {
             session.connect()
         } else if controlsVisible {
             hideTask?.cancel()
@@ -179,6 +193,7 @@ struct CallView: View {
         hideTask?.cancel()
         session.stop()
         camera.stop()
+        if viaCallKit { IncomingCallManager.shared.hangUpFromApp() }
 
         var action = settings.endAction
         if action == .fakeHome && settings.fakeHomeFile == nil { action = .homeScreen }

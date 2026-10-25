@@ -39,6 +39,20 @@ enum PipCorner: Equatable {
     var isTop: Bool { self == .topLeading || self == .topTrailing }
 }
 
+/// Qui appelle qui.
+enum CallMode: String, Codable, CaseIterable, Identifiable {
+    case outgoing, incoming
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .outgoing: return "Je l'appelle"
+        case .incoming: return "Il m'appelle"
+        }
+    }
+}
+
 /// Ce qui se passe quand on raccroche.
 enum EndAction: String, Codable, CaseIterable, Identifiable {
     case homeScreen, fakeHome, gallery
@@ -68,6 +82,9 @@ struct CallSlot: Codable, Identifiable, Equatable {
     var label = ""
     var contactName = ""
     var contactPhotoFile: String?
+    /// Numéro ou e-mail d'un contact de l'iPhone : en mode « il m'appelle »,
+    /// iOS affiche alors sa photo sur l'écran d'appel.
+    var contactHandle = ""
     /// nil = style par défaut des réglages.
     var style: CallStyle?
     var hangUpAtEnd = false
@@ -88,12 +105,17 @@ struct CallSlot: Codable, Identifiable, Equatable {
         label = try c.decodeIfPresent(String.self, forKey: .label) ?? ""
         contactName = try c.decodeIfPresent(String.self, forKey: .contactName) ?? ""
         contactPhotoFile = try c.decodeIfPresent(String.self, forKey: .contactPhotoFile)
+        contactHandle = try c.decodeIfPresent(String.self, forKey: .contactHandle) ?? ""
         style = try c.decodeIfPresent(CallStyle.self, forKey: .style)
         hangUpAtEnd = try c.decodeIfPresent(Bool.self, forKey: .hangUpAtEnd) ?? false
     }
 }
 
 struct AppSettings: Codable, Equatable {
+    var callMode: CallMode = .outgoing
+    /// Mode « il m'appelle » : délai entre l'appui sur le volume et la sonnerie.
+    var incomingDelay: Double = 5
+    var defaultContactHandle = ""
     var defaultStyle: CallStyle = .whatsapp
     var defaultContactName = "Julien"
     /// Durée de la sonnerie avant que l'appel « décroche ».
@@ -111,6 +133,9 @@ struct AppSettings: Codable, Equatable {
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let d = AppSettings()
+        callMode = try c.decodeIfPresent(CallMode.self, forKey: .callMode) ?? d.callMode
+        incomingDelay = try c.decodeIfPresent(Double.self, forKey: .incomingDelay) ?? d.incomingDelay
+        defaultContactHandle = try c.decodeIfPresent(String.self, forKey: .defaultContactHandle) ?? ""
         defaultStyle = try c.decodeIfPresent(CallStyle.self, forKey: .defaultStyle) ?? d.defaultStyle
         defaultContactName = try c.decodeIfPresent(String.self, forKey: .defaultContactName) ?? d.defaultContactName
         ringSeconds = try c.decodeIfPresent(Double.self, forKey: .ringSeconds) ?? d.ringSeconds

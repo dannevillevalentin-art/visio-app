@@ -13,6 +13,7 @@ struct VisioApp: App {
                     // Demande l'accès caméra dès le premier lancement,
                     // pour ne jamais voir la question pendant un tour.
                     _ = await AVCaptureDevice.requestAccess(for: .video)
+                    _ = await AVAudioApplication.requestRecordPermission()
                 }
         }
     }

@@ -10,6 +10,26 @@ struct SettingsView: View {
         NavigationStack {
             Form {
                 Section {
+                    Picker("Qui appelle", selection: $store.settings.callMode) {
+                        ForEach(CallMode.allCases) { Text($0.label).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    if store.settings.callMode == .incoming {
+                        Stepper(value: $store.settings.incomingDelay, in: 0...60, step: 1) {
+                            LabeledContent("Sonnerie après", value: "\(Int(store.settings.incomingDelay)) s")
+                        }
+                        TextField("Numéro ou e-mail par défaut (facultatif)", text: $store.settings.defaultContactHandle)
+                            .keyboardType(.emailAddress)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                    }
+                } header: {
+                    Text("Type d'appel")
+                } footer: {
+                    Text(callModeFooter)
+                }
+
+                Section {
                     Picker("Style par défaut", selection: $store.settings.defaultStyle) {
                         ForEach(CallStyle.allCases) { Text($0.label).tag($0) }
                     }
@@ -85,6 +105,9 @@ struct SettingsView: View {
                     Button("OK") { dismiss() }
                 }
             }
+            .onChange(of: store.settings.callMode) { _, mode in
+                if mode == .outgoing { IncomingCallManager.shared.disarm() }
+            }
             .onChange(of: fakeHomeItem) { _, item in
                 guard let item else { return }
                 fakeHomeItem = nil
@@ -94,6 +117,21 @@ struct SettingsView: View {
                     }
                 }
             }
+        }
+    }
+
+    private var callModeFooter: String {
+        switch store.settings.callMode {
+        case .outgoing:
+            return "Toucher une vidéo lance l'appel tout de suite."
+        case .incoming:
+            return """
+            Toucher une vidéo programme l'appel (légère vibration). On peut ensuite verrouiller l'iPhone ou changer d'app. \
+            Un appui sur un bouton de volume lance le compte à rebours, puis un vrai appel vidéo entrant iOS sonne. \
+            Sur l'écran d'appel, iOS affiche « <nom de l'app> Vidéo ». \
+            Si un numéro ou e-mail correspond à un contact de l'iPhone, sa photo s'affiche. \
+            Conseil : Réglages iOS → Téléphone → Appels entrants → Plein écran.
+            """
         }
     }
 

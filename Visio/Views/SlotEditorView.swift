@@ -201,9 +201,15 @@ struct SlotEditorView: View {
                 }
                 .buttonStyle(.borderless)
             }
+            TextField("Numéro ou e-mail (facultatif)", text: slot.contactHandle)
+                .keyboardType(.emailAddress)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
             Toggle("Raccrocher à la fin de la vidéo", isOn: slot.hangUpAtEnd)
         } header: {
             Text("Appel")
+        } footer: {
+            Text("En mode « Il m'appelle », si le numéro ou l'e-mail correspond à un contact de l'iPhone, iOS affiche sa photo sur l'écran d'appel entrant.")
         }
     }
 

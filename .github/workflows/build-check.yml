@@ -13,6 +13,7 @@ jobs:
     timeout-minutes: 30
     env:
       BUNDLE_ID: com.example.visio
+      APP_DISPLAY_NAME: Visio
     steps:
       - uses: actions/checkout@v5
 

@@ -13,6 +13,8 @@ jobs:
       ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
       ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
       BUILD_NUMBER: ${{ github.run_number }}
+      # Nom affiché sous l'icône : variable APP_DISPLAY_NAME (onglet Variables du repo).
+      APP_DISPLAY_NAME: ${{ vars.APP_DISPLAY_NAME || 'Visio' }}
 
     steps:
       - name: Récupérer le code

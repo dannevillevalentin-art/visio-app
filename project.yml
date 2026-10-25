@@ -33,7 +33,7 @@ targets:
     info:
       path: Visio/Info.plist
       properties:
-        CFBundleDisplayName: Visio
+        CFBundleDisplayName: ${APP_DISPLAY_NAME}
         CFBundleName: Visio
         CFBundleIdentifier: $(PRODUCT_BUNDLE_IDENTIFIER)
         CFBundleExecutable: $(EXECUTABLE_NAME)
@@ -44,9 +44,12 @@ targets:
         LSRequiresIPhoneOS: true
         UILaunchScreen: {}
         UIRequiresFullScreen: true
+        UIBackgroundModes:
+          - audio
+          - voip
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
         ITSAppUsesNonExemptEncryption: false
         NSCameraUsageDescription: "La caméra frontale affiche votre retour vidéo pendant l'appel ; la caméra arrière sert à filmer les vidéos."
-        NSMicrophoneUsageDescription: "Le micro enregistre le son des vidéos que vous filmez dans l'app."
+        NSMicrophoneUsageDescription: "Le micro sert au son des vidéos filmées dans l'app et aux appels simulés."
         NSPhotoLibraryAddUsageDescription: "Pour enregistrer une copie de vos vidéos dans Photos."

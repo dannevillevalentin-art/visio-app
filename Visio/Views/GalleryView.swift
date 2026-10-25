@@ -5,6 +5,7 @@ import SwiftUI
 /// - « Sélectionner » : passe en mode index (numéros, notes, réglages).
 struct GalleryView: View {
     @EnvironmentObject private var store: LibraryStore
+    @ObservedObject private var incoming = IncomingCallManager.shared
 
     @State private var editing = false
     @State private var editingSlot: SlotRef?
@@ -16,6 +17,19 @@ struct GalleryView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
+                if editing, let armed = incoming.armedSlotID, let position = store.index(of: armed) {
+                    HStack {
+                        Image(systemName: "phone.arrow.down.left")
+                        Text(incoming.state == .waiting ? "Appel \(position + 1) en approche…" : "Appel \(position + 1) programmé")
+                        Spacer()
+                        Button("Annuler") { incoming.disarm() }
+                    }
+                    .font(.subheadline)
+                    .padding(12)
+                    .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+                    .padding(.horizontal)
+                    .padding(.bottom, 8)
+                }
                 LazyVGrid(columns: columns, spacing: 2) {
                     ForEach(Array(store.slots.enumerated()), id: \.element.id) { index, slot in
                         GalleryTile(
@@ -29,6 +43,7 @@ struct GalleryView: View {
                 }
             }
             .navigationTitle(editing ? "Index" : "Récents")
+            .background(VolumeViewHost().frame(width: 1, height: 1).opacity(0.02))
             .toolbar {
                 if editing {
                     ToolbarItem(placement: .topBarLeading) {
@@ -46,6 +61,23 @@ struct GalleryView: View {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button("Sélectionner") { editing = true }
                     }
+                }
+            }
+        }
+        .onChange(of: incoming.state) { _, state in
+            // Un appel arrive : on referme ce qui est ouvert pour laisser place à l'écran d'appel.
+            if state == .ringing {
+                editingSlot = nil
+                showSettings = false
+                editing = false
+            }
+        }
+        .fullScreenCover(item: $incoming.answeredSlot) { slot in
+            CallView(slot: slot, settings: store.settings, viaCallKit: true) { animated in
+                if animated {
+                    incoming.answeredSlot = nil
+                } else {
+                    withoutAnimation { incoming.answeredSlot = nil }
                 }
             }
         }
@@ -73,6 +105,17 @@ struct GalleryView: View {
     private func tap(_ slot: CallSlot) {
         if editing {
             editingSlot = SlotRef(id: slot.id)
+        } else if slot.hasVideo && store.settings.callMode == .incoming {
+            let name = slot.contactName.trimmingCharacters(in: .whitespaces)
+            let handle = slot.contactHandle.trimmingCharacters(in: .whitespaces)
+            incoming.arm(.init(
+                slot: slot,
+                name: name.isEmpty ? store.settings.defaultContactName : name,
+                handle: handle.isEmpty ? store.settings.defaultContactHandle : handle,
+                delay: store.settings.incomingDelay
+            ))
+            // Petite vibration discrète : l'appel est programmé.
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
         } else if slot.hasVideo {
             // L'écran d'appel apparaît instantanément, sans glissement.
             withoutAnimation { activeCall = slot }
